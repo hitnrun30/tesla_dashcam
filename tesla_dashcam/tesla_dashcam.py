@@ -1510,7 +1510,7 @@ def create_movie(
     meta_content = ""
     meta_start = 0
     total_videoduration = 0
-    chapter_offset = chapter_offset * 1000000000
+    chapter_offset = chapter_offset * 1000
     with os.fdopen(ffmpeg_join_filehandle, "w") as fp:
         # Loop through the list sorted by video timestamp.
         for video_clip in sorted(
@@ -1533,12 +1533,12 @@ def create_movie(
             total_clips = total_clips + 1
             title = video_clip["video_timestamp"].astimezone(get_localzone())
             # For duration need to also calculate if video was sped-up or slowed down.
-            video_duration = int(video_clip["video_duration"] * 1000000000)
+            video_duration = int(video_clip["video_duration"] * 1000)
             total_videoduration += video_duration
             chapter_start = meta_start
             if video_duration > abs(chapter_offset):
                 if chapter_offset < 0:
-                    chapter_start = meta_start + video_duration + chapter_offset
+                    chapter_start = total_videoduration + chapter_offset
                 elif chapter_offset > 0:
                     chapter_start = chapter_start + chapter_offset
 
@@ -1546,30 +1546,33 @@ def create_movie(
             if total_clips == 1 and chapter_start > 0:
                 meta_content = (
                     "[CHAPTER]{linesep}"
-                    "TIMEBASE=1/1000000000{linesep}"
+                    "TIMEBASE=1/1000{linesep}"
                     "START={start}{linesep}"
                     "END={end}{linesep}"
-                    "title={title}{linesep}".format(
-                        linesep=os.linesep,
+                    "title={title}{linesep}{linesep}".format(
+                        linesep='\n',
                         start=0,
                         end=chapter_start - 1,
                         title="Start",
                     )
                 )
 
+            if meta_start > 0:
+                chapter_start = chapter_start + 1
+                
             meta_content = (
                 meta_content + "[CHAPTER]{linesep}"
-                "TIMEBASE=1/1000000000{linesep}"
+                "TIMEBASE=1/1000{linesep}"
                 "START={start}{linesep}"
                 "END={end}{linesep}"
-                "title={title}{linesep}".format(
-                    linesep=os.linesep,
+                "title={title}{linesep}{linesep}".format(
+                    linesep='\n',
                     start=chapter_start,
                     end=meta_start + video_duration,
                     title=title.strftime("%x %X"),
                 )
             )
-            meta_start = meta_start + 1 + video_duration
+            meta_start = total_videoduration #meta_start + video_duration
 
             if start_timestamp is None:
                 start_timestamp = video_clip.get("video_start_timestamp")
@@ -1594,7 +1597,13 @@ def create_movie(
         return None, None
 
     # Write out the meta data file.
-    meta_content = ";FFMETADATA1" + os.linesep + meta_content
+    meta_content = (";FFMETADATA1{linesep}"
+                    "title={title}{linesep}{linesep}".format(
+                        linesep='\n',
+                        title=os.path.splitext(os.path.basename(movie_filename))[0],
+                        )
+                    + meta_content
+                    )
 
     ffmpeg_meta_filehandle, ffmpeg_meta_filename = mkstemp(suffix=".txt", text=True)
     with os.fdopen(ffmpeg_meta_filehandle, "w") as fp:
